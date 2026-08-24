@@ -126,6 +126,7 @@ write_env($root);
 install($root);
 generate_sdk($root);
 verify($root);
+graft_template($root);
 next_steps($answers);
 
 exit(0);
@@ -699,6 +700,92 @@ function report_removed(array $removed): void
     }
 }
 
+/**
+ * Set up the template remote and graft history.
+ */
+function graft_template(string $root): void
+{
+    if (! is_dir($root.'/.git')) {
+        writeln('');
+        writeln('  Not a git repository; skipping template graft.');
+
+        return;
+    }
+
+    writeln('');
+    if (! confirm('Graft template history as first ancestor', true)) {
+        return;
+    }
+
+    $message = ask('Commit message', 'Graft template history');
+
+    writeln('');
+    writeln('  $ git add .');
+
+    if (run($root, 'git add .') !== 0) {
+        writeln('  Failed to stage changes.');
+
+        return;
+    }
+
+    writeln('  $ git commit -m '.escapeshellarg($message));
+
+    if (run($root, 'git commit -m '.escapeshellarg($message)) !== 0) {
+        writeln('  Failed to commit.');
+
+        return;
+    }
+
+    writeln('  $ git remote add template https://github.com/zero-to-prod/sdk-generator.git');
+
+    if (run($root, 'git remote add template https://github.com/zero-to-prod/sdk-generator.git') !== 0) {
+        writeln('  Template remote may already exist; continuing.');
+    }
+
+    writeln('  $ git fetch template');
+
+    if (run($root, 'git fetch template') !== 0) {
+        writeln('  Failed to fetch template.');
+
+        return;
+    }
+
+    writeln('  $ git config merge.keepours.driver true');
+
+    if (run($root, 'git config merge.keepours.driver true') !== 0) {
+        writeln('  Failed to configure merge driver.');
+
+        return;
+    }
+
+    $sha = template_sha();
+
+    if ($sha === '') {
+        writeln('  Could not find template commit SHA.');
+
+        return;
+    }
+
+    writeln('  $ git merge -s ours --allow-unrelated-histories '.$sha.' -m "Graft template history"');
+
+    if (run($root, 'git merge -s ours --allow-unrelated-histories '.$sha.' -m "Graft template history"') !== 0) {
+        writeln('  Merge failed; see git status for conflicts or issues.');
+
+        return;
+    }
+
+    writeln('  $ git config pull.rebase false');
+
+    if (run($root, 'git config pull.rebase false') !== 0) {
+        writeln('  Failed to configure pull strategy.');
+
+        return;
+    }
+
+    writeln('');
+    writeln('  Template grafted. Future updates: `git pull template main`');
+}
+
 /** @param array<string, string> $answers */
 function next_steps(array $answers): void
 {
@@ -706,18 +793,19 @@ function next_steps(array $answers): void
 
     writeln('');
     writeln('Done. `composer test` runs the suite.');
+    writeln('See docs/template.md for more detail on updates and merges.');
     writeln('');
-    writeln('    git add .');
-    writeln('    git commit -m "Let\'s change the world\!"');
-    writeln('    git remote add template https://github.com/zero-to-prod/sdk-generator.git');
-    writeln('    git fetch template');
-    writeln('    git config merge.keepours.driver true');
-    writeln('    git log --oneline template/main');
-    writeln('    git merge -s ours --allow-unrelated-histories sha -m "Graft template history"');
-    writeln('    git config pull.rebase false');
-    writeln('    git pull template main');
-    writeln('See docs/template.md for more detail.');
-    writeln('');
+}
+
+function template_sha(): string
+{
+    $output = trim((string) shell_exec('git log --oneline template/main 2>/dev/null | head -1'));
+
+    if ($output === '' || strpos($output, ' ') === false) {
+        return '';
+    }
+
+    return explode(' ', $output)[0];
 }
 
 function writeln(string $line): void
