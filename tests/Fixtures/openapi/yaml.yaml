@@ -1,5 +1,8 @@
-# Exercises the YAML the wild actually ships: comments, unquoted scalars,
-# block scalars, anchors and merge keys, and a flow mapping.
+# Exercises the YAML the wild actually ships: a comment header in front of an
+# explicit document-start marker, unquoted scalars, block scalars, anchors and
+# merge keys, a flow mapping, and a complex mapping key.
+
+---
 openapi: 3.0.3
 info:
   title: Yaml
@@ -27,6 +30,13 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/thing'
+  # A dumper writes any key past its length limit in the explicit `? key` form.
+  ? "/v1/things/{thing_id}/parts/{part_id}/revisions/{revision_id}/attachments/{attachment_id}/downloads"
+  : get:
+      operationId: things/download
+      responses:
+        '200':
+          description: ok
 components:
   schemas:
     named: &named

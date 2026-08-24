@@ -83,6 +83,35 @@ class DocumentTest extends GeneratorCase
     }
 
     #[Test]
+    public function a_document_start_marker_behind_a_comment_header_is_not_a_second_document(): void
+    {
+        // symfony/yaml only tolerates `---` on the very first line; GitLab's
+        // document puts a comment banner in front of it.
+        $document = Document::parse("# banner\n\n---\nopenapi: 3.1.0\n", 'inline');
+
+        self::assertSame('3.1.0', $document->version());
+    }
+
+    #[Test]
+    public function a_complex_mapping_key_reads_as_the_plain_key_it_stands_for(): void
+    {
+        $paths = Document::load(self::fixture('yaml.yaml'))->paths();
+        $long = '/v1/things/{thing_id}/parts/{part_id}/revisions/{revision_id}/attachments/{attachment_id}/downloads';
+
+        self::assertArrayHasKey($long, $paths);
+        self::assertSame('things/download', $paths[$long]['get']['operationId']);
+    }
+
+    #[Test]
+    public function a_genuine_multi_document_stream_is_still_refused(): void
+    {
+        $this->expectException(GeneratorException::class);
+        $this->expectExceptionMessage('Multiple documents are not supported');
+
+        Document::parse("openapi: 3.1.0\n---\nopenapi: 3.0.3\n", 'inline');
+    }
+
+    #[Test]
     public function malformed_yaml_reports_the_decode_error(): void
     {
         $this->expectException(GeneratorException::class);

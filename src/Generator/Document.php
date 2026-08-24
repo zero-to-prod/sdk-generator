@@ -103,6 +103,8 @@ final class Document
      */
     private static function decodeYaml(string $raw, string $label): mixed
     {
+        $raw = self::flattenComplexKeys(self::stripDocumentStart($raw));
+
         if (class_exists(Yaml::class)) {
             try {
                 return Yaml::parse($raw);
@@ -130,6 +132,97 @@ final class Document
             . ' Install one with `composer require --dev symfony/yaml`, enable `ext-yaml`,'
             . ' or convert the document first, e.g. `npx -y js-yaml spec.yaml > spec.json`.',
         );
+    }
+
+    /**
+     * Remove a leading document-start marker and the preamble in front of it.
+     *
+     * A single-document stream may still open with `---`, after a comment
+     * header or a `%YAML` directive — GitLab's OpenAPI document does exactly
+     * that. symfony/yaml only tolerates the marker on the very first line and
+     * otherwise reads it as the start of a second document, refusing the file
+     * with "Multiple documents are not supported". A marker further in really
+     * is a multi-document stream, and still fails.
+     */
+    private static function stripDocumentStart(string $raw): string
+    {
+        $lines = preg_split('/\R/', $raw);
+
+        if ($lines === false) {
+            return $raw;
+        }
+
+        foreach ($lines as $index => $line) {
+            $line = rtrim($line);
+
+            if ($line === '' || $line[0] === '#' || $line[0] === '%') {
+                continue;
+            }
+
+            // Content before any marker: nothing to strip.
+            return $line === '---' ? implode("\n", array_slice($lines, $index + 1)) : $raw;
+        }
+
+        return $raw;
+    }
+
+    /**
+     * Rewrite YAML complex mapping keys (`? key` / `: value`) as plain ones.
+     *
+     * A dumper emits the explicit form for any key past its length limit — Ruby's
+     * Psych does it at 128 characters, which is why GitLab's OpenAPI document
+     * writes its longest paths that way. symfony/yaml refuses the construct
+     * outright ("Complex mappings are not supported"), and every one of these is
+     * really a plain string key, so the two lines fold back into one:
+     *
+     *     ? "/very/long/path"        "/very/long/path":
+     *     : get:              ->       get:
+     *         summary: …                 summary: …
+     *
+     * The value keeps its original column, so the block underneath it still
+     * lines up. Anything else — a multi-line or non-scalar key — is left alone
+     * and still fails, rather than being mangled into something that parses.
+     */
+    private static function flattenComplexKeys(string $raw): string
+    {
+        $lines = preg_split('/\R/', $raw);
+
+        if ($lines === false) {
+            return $raw;
+        }
+
+        $out = [];
+
+        for ($index = 0, $total = count($lines); $index < $total; $index++) {
+            $key = [];
+            $next = $lines[$index + 1] ?? '';
+
+            // `? |` and friends open a multi-line key, which this cannot fold.
+            if (preg_match('/^(\s*)\? ([^|>].*)$/', $lines[$index], $key) !== 1) {
+                $out[] = $lines[$index];
+
+                continue;
+            }
+
+            $indent = preg_quote($key[1], '/');
+            $value = [];
+
+            if (preg_match("/^$indent:(?: (\S.*))?$/", $next, $value) !== 1) {
+                $out[] = $lines[$index];
+
+                continue;
+            }
+
+            $out[] = $key[1] . rtrim($key[2]) . ':';
+
+            if (($value[1] ?? '') !== '') {
+                $out[] = $key[1] . '  ' . $value[1];
+            }
+
+            $index++;
+        }
+
+        return implode("\n", $out);
     }
 
     /** The `openapi` version string, or `0.0.0` when absent. */
