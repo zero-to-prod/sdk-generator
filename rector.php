@@ -10,7 +10,7 @@ try {
         ->withPaths([
             __DIR__.'/src',
         ])
-        ->withSkipPath(__DIR__.'/src/Models')
+        ->withParallel(timeoutSeconds: 6000, jobSize: 4)
         ->withPhpSets(php81: true)
         ->withPreparedSets(
             deadCode: true,
