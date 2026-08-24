@@ -36,10 +36,12 @@ gh repo create <org>/my-sdk --source=. --remote=origin
 # Once per clone. See "The driver is not in .gitattributes" below.
 git config merge.keepours.driver true
 
-# Rebrand: namespaces, class names, composer.json, sdk.json, file renames.
+# Rebrand and build: prompts for the package identity, rewrites namespaces,
+# class names, composer.json and sdk.json, renames the files that carry a name,
+# installs dependencies, generates the models from your OpenAPI document, and
+# runs `composer fix`. The package is ready for `composer test` afterwards.
 php init
 
-composer setup && composer check
 git add -A && git commit -m "Initialise <org>/my-sdk from template"
 git push -u origin main
 ```
@@ -49,6 +51,10 @@ point: a clone carries the template's commits, so `git merge` has a common
 ancestor to work from. A template-button repository starts with a single squashed
 commit and shares no history with anything, which turns every later merge into a
 whole-tree conflict.
+
+`php init` asks for one thing it will not let you skip: the OpenAPI document. A
+package with no models is not finished, and the generator reads that document to
+write `src/Models/` and `src/ApiRoute.php` before the script ends.
 
 `php init` deletes itself when it finishes. That is deliberate — it is a one-time
 rebranding, and a second run would try to rename files that no longer carry

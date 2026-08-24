@@ -258,6 +258,13 @@ class ExampleDomainTest extends TestCase
         self::assertSame('Example widget', $response->widgets[0]->name);
         self::assertInstanceOf(Pagination::class, $response->Pagination);
         self::assertSame(1, $response->Pagination->total);
+
+        // The shipped `PaginationFactory` is named here and nowhere else: a
+        // document declaring its own `Pagination` schema replaces the model, so
+        // the shared suite composes `FixturePaginationFactory` instead.
+        self::assertSame(1, $response->Pagination->current_page);
+        self::assertSame(1, $response->Pagination->last_page);
+        self::assertSame(10, $response->Pagination->per_page);
     }
 
     #[Test]

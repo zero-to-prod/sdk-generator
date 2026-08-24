@@ -6,11 +6,11 @@ namespace Tests\Fixtures\Models;
 
 use Zerotoprod\DataModel\Describe;
 use Zerotoprod\Sdk\Internal\DataModel;
-use Zerotoprod\Sdk\Models\Pagination;
 
 /**
- * Collection response. Nests the package's own retained `Pagination` model, so
- * the shared suite keeps exercising it in a generated package too.
+ * Collection response. Nests {@see FixturePagination}, a fixture rather than the
+ * shipped `Zerotoprod\Sdk\Models\Pagination`, so a document that declares its
+ * own `Pagination` schema cannot reshape what the shared suite asserts.
  */
 class FixtureThingsResponse
 {
@@ -27,5 +27,5 @@ class FixtureThingsResponse
 
     public const Pagination = 'Pagination';
     #[Describe(['nullable' => true])]
-    public ?Pagination $Pagination = null;
+    public ?FixturePagination $Pagination = null;
 }

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\Published;
 
+use Tests\Fixtures\Models\FixturePagination;
 use Tests\Fixtures\Models\FixtureThing;
 use Zerotoprod\DataModel\Describe;
 use Zerotoprod\Sdk\Internal\DataModel;
-use Zerotoprod\Sdk\Models\Pagination;
 
 /**
  * A "published" override of {@see \Tests\Fixtures\Models\FixtureThingsResponse}.
@@ -32,7 +32,7 @@ class FixtureThingsResponse
 
     public const Pagination = 'Pagination';
     #[Describe(['nullable' => true])]
-    public ?Pagination $Pagination = null;
+    public ?FixturePagination $Pagination = null;
 
     public function publishedMarker(): string
     {

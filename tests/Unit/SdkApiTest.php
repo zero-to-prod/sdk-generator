@@ -9,6 +9,7 @@ use Tests\Fixtures\AltFixtureRoute;
 use Tests\Fixtures\FixtureRoute;
 use Tests\Fixtures\Models\FixtureCreateThingRequest;
 use Tests\Fixtures\Models\FixtureDeleteLabelRequest;
+use Tests\Fixtures\Models\FixturePagination;
 use Tests\Fixtures\Models\FixtureThing;
 use Tests\Fixtures\Models\FixtureThingsResponse;
 use Tests\Fixtures\Models\FixtureThingStatus;
@@ -22,7 +23,6 @@ use Zerotoprod\Sdk\Internal\Fake;
 use Zerotoprod\Sdk\Internal\HttpMethod;
 use Zerotoprod\Sdk\Internal\Route;
 use Zerotoprod\Sdk\Models\Errors;
-use Zerotoprod\Sdk\Models\Pagination;
 use Zerotoprod\Sdk\Models\Query;
 use Zerotoprod\Sdk\Options;
 use Zerotoprod\Sdk\Response;
@@ -290,7 +290,7 @@ class SdkApiTest extends TestCase
         self::assertSame('thg-02', $result->data->things[1]->id);
         self::assertSame(FixtureThingStatus::archived, $result->data->things[1]->status);
 
-        self::assertInstanceOf(Pagination::class, $result->data->Pagination);
+        self::assertInstanceOf(FixturePagination::class, $result->data->Pagination);
         self::assertSame(2, $result->data->Pagination->total);
 
         $fake->assertSent(HttpMethod::GET->value, '/v1/things');

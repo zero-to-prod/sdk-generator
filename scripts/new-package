@@ -52,11 +52,11 @@ Run these from the directory that should contain $slug:
     # so without this merges resolve the wrong way and say nothing.
     git config merge.keepours.driver true
 
-    # Rebrand: rewrites namespaces, class names, composer.json and sdk.json,
-    # renames the files that carry a name, then deletes itself.
+    # Rebrand and build: prompts for the identity, rewrites namespaces, class
+    # names, composer.json and sdk.json, renames the files that carry a name,
+    # installs dependencies, generates the models from your OpenAPI document,
+    # runs \`composer fix\`, then deletes itself. Ready for \`composer test\`.
     php init
-
-    composer setup && composer check
 
     git add -A && git commit -m "Initialise $org/$slug from template"
     git push -u origin main

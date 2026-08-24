@@ -13,7 +13,11 @@ use Tests\TestCase;
  * `init` rebrands the template into a concrete package and then deletes itself,
  * so it gets exactly one chance to be correct. Every test here copies the parts
  * of the repository that carry a template name into a throwaway directory and
- * drives the real script non-interactively.
+ * drives the real script with answers on stdin, one line per prompt.
+ *
+ * `SDK_INIT_SKIP_BUILD=1` stops the script after the rewrite. Without it every
+ * sandbox would install dependencies, generate models and run the suite --
+ * minutes per test, none of it what these assertions look at.
  */
 class InitTest extends TestCase
 {
@@ -49,17 +53,25 @@ class InitTest extends TestCase
         'tests/Unit/ExampleDomainTest.php',
     ];
 
+    /** Answers in prompt order. An empty line accepts the computed default. */
     private const ANSWERS = [
-        'slug' => 'github-api',
-        'vendor' => 'zero-to-prod',
-        'title' => 'GitHub API',
-        'description' => 'PHP SDK for the GitHub REST API',
-        'base_url' => 'https://api.github.com',
-        'docs_url' => 'https://docs.github.com/rest',
-        'openapi_source' => 'openapi/github.json',
-        'author' => 'Ada Lovelace',
-        'author_email' => 'ada@example.com',
+        'github-api',                      // package slug
+        'zero-to-prod',                    // vendor
+        '',                                // PHP namespace
+        'GitHub API',                      // title
+        'PHP SDK for the GitHub REST API', // description
+        '',                                // API class name
+        '',                                // config class name
+        'https://api.github.com',          // base URL
+        'https://docs.github.com/rest',    // docs URL
+        self::OPENAPI,                     // OpenAPI source
+        'Ada Lovelace',                    // author name
+        'ada@example.com',                 // author email
+        '',                                // write these values?
     ];
+
+    /** Created in every sandbox: init refuses a source it cannot read. */
+    private const OPENAPI = 'openapi/github.json';
 
     /** @var list<string> */
     private array $sandboxes = [];
@@ -196,10 +208,6 @@ class InitTest extends TestCase
         $offenders = [];
 
         foreach ($this->files($sandbox) as $file) {
-            if (basename($file) === 'answers.json') {
-                continue;
-            }
-
             $contents = (string) file_get_contents($file);
 
             $markdown = substr($file, -3) === '.md';
@@ -255,30 +263,23 @@ class InitTest extends TestCase
     }
 
     #[Test]
-    public function regenerates_the_claude_md_command_listing(): void
+    public function renames_the_cli_script_and_its_composer_key(): void
     {
         $sandbox = $this->initialise();
 
-        // The rename itself is unconditional.
         self::assertFileExists($sandbox . '/scripts/github-api');
         self::assertFileDoesNotExist($sandbox . '/scripts/sdk');
 
-        // Regenerating the listing shells out to scripts/generate-claude-md,
-        // which is bash. The php:*-alpine images the docker services use ship no
-        // bash, so inside them it exits 127 and init reports that it could not
-        // regenerate rather than pretending. The assertion only means anything
-        // where bash exists.
-        if (trim((string) shell_exec('command -v bash 2>/dev/null')) === '') {
-            self::markTestSkipped('bash is unavailable, so the listing cannot be regenerated.');
-        }
+        // The composer script key is renamed with the file it runs, or the
+        // listing in CLAUDE.md keeps advertising a command that is gone.
+        // Regenerating that listing is `composer fix`'s job, in the build step.
+        $composer = $this->json($sandbox . '/composer.json');
 
-        // scripts/sdk is renamed and its composer script key with it, so the
-        // listing changes and the block in CLAUDE.md goes stale --
-        // check-claude-md would fail on an untouched package.
-        $claude = (string) file_get_contents($sandbox . '/CLAUDE.md');
-
-        self::assertStringContainsString('github-api', $claude);
-        self::assertStringNotContainsString('  sdk ', $claude);
+        self::assertArrayHasKey('github-api', $composer['scripts']);
+        self::assertArrayNotHasKey('sdk', $composer['scripts']);
+        self::assertSame('scripts/github-api', $composer['scripts']['github-api']);
+        self::assertArrayHasKey('github-api', $composer['scripts-descriptions']);
+        self::assertArrayNotHasKey('sdk', $composer['scripts-descriptions']);
     }
 
     #[Test]
@@ -341,12 +342,7 @@ class InitTest extends TestCase
     {
         $sandbox = $this->sandbox();
 
-        file_put_contents(
-            $sandbox . '/answers.json',
-            (string) json_encode(self::ANSWERS, JSON_THROW_ON_ERROR),
-        );
-
-        [$status, $output] = $this->execute($sandbox, '--answers=answers.json');
+        [$status, $output] = $this->execute($sandbox, self::ANSWERS);
         $printed = implode("\n", $output);
 
         self::assertSame(0, $status, $printed);
@@ -384,11 +380,15 @@ class InitTest extends TestCase
     }
 
     #[Test]
-    public function accepts_every_default_without_prompting(): void
+    public function accepts_every_computed_default(): void
     {
         $sandbox = $this->sandbox();
 
-        [$status, $output] = $this->execute($sandbox, '--defaults');
+        // Every answer blank except the OpenAPI source, which has no default.
+        $answers = array_fill(0, count(self::ANSWERS), '');
+        $answers[9] = self::OPENAPI;
+
+        [$status, $output] = $this->execute($sandbox, $answers);
 
         self::assertSame(0, $status, implode("\n", $output));
         self::assertFileDoesNotExist($sandbox . '/init');
@@ -400,6 +400,39 @@ class InitTest extends TestCase
     }
 
     #[Test]
+    public function asks_again_until_the_openapi_source_is_readable(): void
+    {
+        $sandbox = $this->sandbox();
+
+        // A package with no models is not finished, so the prompt loops rather
+        // than accepting an empty or missing document.
+        $answers = self::ANSWERS;
+        array_splice($answers, 9, 0, ['', 'openapi/missing.json']);
+
+        [$status, $output] = $this->execute($sandbox, $answers);
+        $printed = implode("\n", $output);
+
+        self::assertSame(0, $status, $printed);
+        self::assertStringContainsString('An OpenAPI document is required', $printed);
+        self::assertSame(self::OPENAPI, $this->json($sandbox . '/sdk.json')['openapi']['source']);
+    }
+
+    #[Test]
+    public function stops_when_stdin_closes_before_the_questions_are_answered(): void
+    {
+        $sandbox = $this->sandbox();
+
+        [$status, $output] = $this->execute($sandbox, ['github-api']);
+
+        self::assertSame(1, $status);
+        self::assertStringContainsString('stdin closed', implode("\n", $output));
+
+        // Nothing is written until every answer is in and confirmed.
+        self::assertFileExists($sandbox . '/init');
+        self::assertSame('zero-to-prod/sdk', $this->json($sandbox . '/sdk.json')['name']);
+    }
+
+    #[Test]
     public function refuses_to_run_outside_a_template_root(): void
     {
         $sandbox = $this->sandbox(['init', 'composer.json']);
@@ -407,7 +440,7 @@ class InitTest extends TestCase
         unlink($sandbox . '/composer.json');
         file_put_contents($sandbox . '/composer.json', '{}');
 
-        [$status, $output] = $this->execute($sandbox, '--defaults');
+        [$status, $output] = $this->execute($sandbox, []);
 
         self::assertSame(1, $status, implode("\n", $output));
         self::assertStringContainsString('repository root', implode("\n", $output));
@@ -426,12 +459,7 @@ class InitTest extends TestCase
             $before($sandbox);
         }
 
-        file_put_contents(
-            $sandbox . '/answers.json',
-            (string) json_encode(self::ANSWERS, JSON_THROW_ON_ERROR),
-        );
-
-        [$status, $output] = $this->execute($sandbox, '--answers=answers.json');
+        [$status, $output] = $this->execute($sandbox, self::ANSWERS);
 
         self::assertSame(0, $status, implode("\n", $output));
 
@@ -439,15 +467,23 @@ class InitTest extends TestCase
     }
 
     /**
+     * @param  list<string>  $answers  one per prompt, in order; [] closes stdin
      * @return array{0: int, 1: list<string>}
      */
-    private function execute(string $sandbox, string $arguments): array
+    private function execute(string $sandbox, array $answers): array
     {
         $output = [];
         $status = 0;
 
+        $stdin = $answers === []
+            ? ':'
+            : "printf '%s\\n' " . implode(' ', array_map('escapeshellarg', $answers));
+
+        // A pipeline exits with the status of its last command, so this is
+        // init's own exit code.
         exec(
-            'cd ' . escapeshellarg($sandbox) . ' && ' . escapeshellarg(PHP_BINARY) . ' init ' . $arguments . ' 2>&1',
+            $stdin . ' | (cd ' . escapeshellarg($sandbox) . ' && SDK_INIT_SKIP_BUILD=1 '
+            . escapeshellarg(PHP_BINARY) . ' init 2>&1)',
             $output,
             $status,
         );
@@ -468,6 +504,9 @@ class InitTest extends TestCase
         foreach ($paths ?? self::COPY as $path) {
             $this->copy($root . '/' . $path, $sandbox . '/' . $path);
         }
+
+        mkdir($sandbox . '/' . dirname(self::OPENAPI), 0777, true);
+        file_put_contents($sandbox . '/' . self::OPENAPI, '{"openapi":"3.0.0","paths":{}}');
 
         return $sandbox;
     }

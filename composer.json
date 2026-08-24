@@ -136,6 +136,9 @@
         "new-package": "Print the command sequence for creating a derived SDK package"
     },
     "config": {
+        "platform": {
+            "php": "8.1.0"
+        },
         "process-timeout": 0
     }
 }

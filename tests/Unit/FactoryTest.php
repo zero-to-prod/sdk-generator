@@ -4,12 +4,14 @@ namespace Unit;
 
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Fixtures\Factories\FixtureCreateThingRequestFactory;
+use Tests\Fixtures\Factories\FixturePaginationFactory;
 use Tests\Fixtures\Factories\FixtureThingFactory;
 use Tests\Fixtures\Factories\FixtureThingsResponseFactory;
 use Tests\Fixtures\Factories\FixtureThingTagFactory;
 use Tests\Fixtures\Factories\FixtureUpdateThingRequestFactory;
 use Tests\Fixtures\FixtureRoute;
 use Tests\Fixtures\Models\FixtureCreateThingRequest;
+use Tests\Fixtures\Models\FixturePagination;
 use Tests\Fixtures\Models\FixtureThing;
 use Tests\Fixtures\Models\FixtureThingsResponse;
 use Tests\Fixtures\Models\FixtureThingStatus;
@@ -18,12 +20,10 @@ use Tests\Fixtures\Models\FixtureUpdateThingRequest;
 use Tests\TestCase;
 use Zerotoprod\Sdk\ApiResult;
 use Zerotoprod\Sdk\Factories\ErrorsFactory;
-use Zerotoprod\Sdk\Factories\PaginationFactory;
 use Zerotoprod\Sdk\Factories\SdkConfigFactory;
 use Zerotoprod\Sdk\Internal\Fake;
 use Zerotoprod\Sdk\Internal\HttpMethod;
 use Zerotoprod\Sdk\Models\Errors;
-use Zerotoprod\Sdk\Models\Pagination;
 use Zerotoprod\Sdk\Response;
 use Zerotoprod\Sdk\SdkApi;
 use Zerotoprod\Sdk\SdkConfig;
@@ -32,11 +32,12 @@ use Zerotoprod\Sdk\SdkConfig;
  * Factory semantics — `set()`, `merge()`, `context()`, composition, and feeding
  * a factory-built body through the fake transport.
  *
- * The model factories used here live in `tests/Fixtures/Factories`, and the
- * package factories are the three `composer generate-sdk` never deletes
- * (`ErrorsFactory`, `PaginationFactory`, and the config factory). The example
- * domain's factories are covered in `ExampleDomainTest`, which `php init`
- * deletes along with them.
+ * The model factories used here live in `tests/Fixtures/Factories`. The only
+ * package factories it names are ones no OpenAPI document can reshape:
+ * `ErrorsFactory`, whose model the shared client itself depends on, and the
+ * config factory. The example domain's factories -- and `PaginationFactory`,
+ * which a document declaring its own `Pagination` schema overwrites -- are
+ * covered in `ExampleDomainTest`, which `php init` deletes.
  */
 class FactoryTest extends TestCase
 {
@@ -172,7 +173,7 @@ class FactoryTest extends TestCase
         self::assertInstanceOf(FixtureThingsResponse::class, $response);
         self::assertInstanceOf(FixtureThing::class, $response->things[0]);
         self::assertSame('Example thing', $response->things[0]->name);
-        self::assertInstanceOf(Pagination::class, $response->Pagination);
+        self::assertInstanceOf(FixturePagination::class, $response->Pagination);
         self::assertSame(1, $response->Pagination->total);
     }
 
@@ -202,7 +203,7 @@ class FactoryTest extends TestCase
                 FixtureThingFactory::factory()->set(FixtureThing::name, 'First')->context(),
                 FixtureThingFactory::factory()->set(FixtureThing::name, 'Second')->context(),
             ])
-            ->set(FixtureThingsResponse::Pagination, PaginationFactory::factory()->set(Pagination::total, 2)->context())
+            ->set(FixtureThingsResponse::Pagination, FixturePaginationFactory::factory()->set(FixturePagination::total, 2)->context())
             ->json() ?: ''));
 
         $result = $api->listThings();
@@ -322,9 +323,9 @@ class FactoryTest extends TestCase
     #[Test]
     public function pagination_factory_defaults(): void
     {
-        $pagination = PaginationFactory::factory()->make();
+        $pagination = FixturePaginationFactory::factory()->make();
 
-        self::assertInstanceOf(Pagination::class, $pagination);
+        self::assertInstanceOf(FixturePagination::class, $pagination);
         self::assertSame(1, $pagination->current_page);
         self::assertSame(10, $pagination->per_page);
         self::assertNull($pagination->next_page_url);

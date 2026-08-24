@@ -8,12 +8,15 @@ declare(strict_types=1);
 | Template initialisation
 |------------------------------------------------------------------------------
 |
-| Rebrand this SDK template into a concrete package. Run this once, from the
-| repository root:
+| Rebrand this SDK template into a concrete package, then build it. Run this
+| once, from the repository root:
 |
-|     php init                          interactive
-|     php init --defaults               accept every computed default
-|     php init --answers=answers.json   read answers from JSON, no prompts
+|     php init
+|
+| It prompts for the package identity, rewrites every file that carries a
+| template name, installs dependencies, generates src/Models and src/ApiRoute.php
+| from the OpenAPI document you named, runs `composer fix`, and deletes itself.
+| The package is ready for `composer test` when it finishes.
 |
 | Edit TEMPLATE when the template's own identity changes. Every key referenced
 | anywhere below MUST exist in TEMPLATE: under declare(strict_types=1) a missing
@@ -36,21 +39,6 @@ const TEMPLATE = [
     'docs_url' => 'https://example.com/docs',
     // The CLAUDE.md opening line, replaced wholesale for a derived package.
     'claude_intro' => 'This repo is the SDK **template** — the common ancestor of every derived SDK package. Work here as if the change ships to every descendant, because it does.',
-];
-
-const ANSWER_KEYS = [
-    'slug',
-    'vendor',
-    'namespace',
-    'title',
-    'description',
-    'api_class',
-    'config_class',
-    'base_url',
-    'docs_url',
-    'openapi_source',
-    'author',
-    'author_email',
 ];
 
 const SKIP_DIRECTORIES = ['.git', '.idea', 'vendor', '.vendor', 'node_modules', '.phpunit.cache', 'coverage', 'build'];
@@ -98,29 +86,11 @@ if (realpath((string) getcwd()) !== realpath($root)
     exit(1);
 }
 
-$options = options($argv);
-
-if (isset($options['help']) || isset($options['h'])) {
-    usage();
-
-    exit(0);
-}
-
-$provided = [];
-
-if (isset($options['answers'])) {
-    $provided = read_answers($options['answers']);
-}
-
-if (isset($options['answers']) || isset($options['defaults']) || isset($options['n'])) {
-    auto(true);
-}
-
 writeln('');
 writeln('  PHP SDK package template');
-writeln(auto() ? '  Running non-interactively.' : '  Press enter to accept the value in brackets.');
+writeln('  Press enter to accept the value in brackets.');
 
-$answers = $provided;
+$answers = [];
 
 do {
     $answers = ask_all($root, $answers);
@@ -138,293 +108,160 @@ writeln(sprintf(
     $renamed,
 ));
 
-dump_autoloaders($root);
-regenerate_claude_md($root);
-format($root);
+report_removed(remove_template_only($root));
 
-$removed = [];
+/*
+| The template's own InitTest drives this script for real, in a throwaway copy
+| of the repository, to assert what the rewrite produced. Everything below
+| installs dependencies and runs the whole suite -- minutes of work per test,
+| none of it what those tests look at.
+*/
+if (getenv('SDK_INIT_SKIP_BUILD') === '1') {
+    next_steps($answers);
 
-if (confirm('Delete init and the template-only tests', true)) {
-    $removed = remove_template_only($root);
+    exit(0);
 }
 
-report_removed($removed);
-
-if (confirm('Generate data models from OpenAPI document', false)) {
-    generate_sdk($root);
-}
-
+write_env($root);
+install($root);
+generate_sdk($root);
+verify($root);
 next_steps($answers);
 
 exit(0);
 
 /*
 |------------------------------------------------------------------------------
-| Input
+| Build
 |------------------------------------------------------------------------------
 */
 
 /**
- * Regenerate every composer autoloader the rename invalidated.
- *
- * Rewriting composer.json's psr-4 prefix leaves each generated autoloader
- * mapping the OLD namespace to src/ and the new one to nothing, so every class
- * in the package reads as missing -- `Class "Vendor\\Package\\PackageConfig" not
- * found` from the first thing that boots.
- *
- * Two kinds of vendor tree need dumping, and they are not interchangeable:
- *
- *  - vendor/ is an ordinary layout, so host composer handles it.
- *  - .vendor/php8.x are mounted at /app/vendor inside the docker services every
- *    composer script uses. These MUST be dumped from inside a container.
- *    Composer writes the project root as a path relative to the vendor
- *    directory it is handed, so a host-side dump of .vendor/php8.1 emits
- *    `$baseDir = dirname(dirname($vendorDir))` -- correct on the host, and `/`
- *    once the tree is mounted one level shallower. Every class then reports as
- *    missing again, with the autoloader looking perfectly fine on the host.
+ * Copy .env.example, which every script in scripts/ sources for PHP_VERSION.
  */
-function dump_autoloaders(string $root): void
+function write_env(string $root): void
 {
-    $messages = [];
-
-    if (is_file($root.'/vendor/composer/installed.json')) {
-        $composer = trim((string) shell_exec('command -v composer 2>/dev/null'));
-
-        if ($composer === '') {
-            $messages[] = 'vendor: composer is not on PATH -- run `composer dump-autoload`';
-        } else {
-            exec(
-                sprintf(
-                    'cd %s && %s dump-autoload --quiet --no-interaction 2>&1',
-                    escapeshellarg($root),
-                    escapeshellarg($composer)
-                ),
-                $output,
-                $status
-            );
-
-            $messages[] = 'vendor: '.($status === 0
-                ? 'autoloader regenerated'
-                : 'dump failed -- run `composer dump-autoload`');
-        }
-    }
-
-    $containerVendors = glob($root.'/.vendor/php*') ?: [];
-
-    if ($containerVendors !== []) {
-        exec('docker info > /dev/null 2>&1', $ignored, $docker);
-
-        if ($docker !== 0) {
-            $messages[] = '.vendor/php*: docker is not running -- run `composer deps-all dump-autoload`';
-        } else {
-            // Per version rather than `composer deps-all`, which iterates
-            // docker/ and would mount -- and therefore create -- a vendor tree
-            // for versions nobody has installed. Those come out holding an
-            // autoloader and no packages, which reads as installed and fails
-            // confusingly under `composer test-all`.
-            $dumped = 0;
-            $failed = [];
-
-            foreach ($containerVendors as $vendor) {
-                $version = substr(basename($vendor), 3);
-
-                exec(
-                    sprintf(
-                        'cd %s && docker compose run --rm %s composer dump-autoload --quiet --no-interaction 2>&1',
-                        escapeshellarg($root),
-                        escapeshellarg('composer'.$version)
-                    ),
-                    $output,
-                    $status
-                );
-
-                $status === 0 ? $dumped++ : $failed[] = $version;
-            }
-
-            $messages[] = sprintf(
-                '.vendor/php*: %d autoloader(s) regenerated in docker%s',
-                $dumped,
-                $failed === [] ? '' : '; failed for '.implode(', ', $failed).' -- run `composer deps-all dump-autoload`'
-            );
-        }
-    }
-
-    if ($messages === []) {
-        $messages[] = 'no vendor directory yet -- `composer install` generates the autoloader';
-    }
-
-    foreach ($messages as $message) {
-        writeln('  '.$message);
-    }
-}
-
-/**
- * Rewrite the generated CLI-commands block in CLAUDE.md.
- *
- * `scripts/sdk` is renamed to `scripts/<slug>`, so the composer script listing
- * changes and the block CLAUDE.md carries goes stale -- `composer check-claude-md`
- * fails on a package nobody has touched yet. The generator shells out to composer
- * and needs no container, so it can run here.
- */
-function regenerate_claude_md(string $root): void
-{
-    $script = $root.'/scripts/generate-claude-md';
-
-    if (! is_file($script) || ! is_file($root.'/CLAUDE.md')) {
+    if (is_file($root.'/.env') || ! is_file($root.'/.env.example')) {
         return;
     }
 
-    exec(sprintf('cd %s && %s 2>&1', escapeshellarg($root), escapeshellarg($script)), $output, $status);
+    copy($root.'/.env.example', $root.'/.env');
 
-    writeln($status === 0
-        ? '  Regenerated the CLAUDE.md command listing.'
-        : '  CLAUDE.md listing not regenerated; run `composer generate-claude-md`.');
+    writeln('  Created .env from .env.example.');
 }
 
 /**
- * Re-sort imports after the rename.
+ * Install dependencies into both trees that need them.
  *
- * The rewrite above is a literal token substitution, so a namespace that used
- * to sort in one place can land in another -- `Zerotoprod\\Sdk\\Foo` becoming
- * `Zerotoprod\\GithubApi\\Foo` moves relative to its neighbours. That leaves the
- * tree failing `composer lint` on a fresh package, before its owner has
- * written a line, so the formatter runs once here. Silent no-op when
- * dependencies are not installed yet.
+ * vendor/ is the host tree. `scripts/generate-sdk` runs on the host PHP and
+ * requires it, and installing also redumps the autoloader the namespace rewrite
+ * just invalidated -- otherwise every class in the package reads as missing.
+ *
+ * .vendor/php8.x is mounted at /app/vendor inside the docker services that run
+ * the tests and every check. Only a container can write it correctly: composer
+ * records the project root as a path relative to the vendor directory it is
+ * handed, so a host-side dump of .vendor/php8.1 is wrong the moment that tree
+ * is mounted one level shallower.
  */
-function format(string $root): void
+function install(string $root): void
 {
-    $fixer  = $root.'/vendor/bin/php-cs-fixer';
-    $config = $root.'/.php-cs-fixer.dist.php';
-
-    if (!is_file($fixer) || !is_file($config)) {
-        writeln('  Skipped formatting: run `composer install && composer format`.');
+    if (! available('composer')) {
+        writeln('  composer is not on PATH; run `composer install` yourself.');
 
         return;
     }
 
-    $command = sprintf(
-        '%s fix --config=%s --quiet 2>&1',
-        escapeshellarg($fixer),
-        escapeshellarg($config)
-    );
+    run($root, 'composer install --no-interaction');
 
-    exec($command, $output, $status);
+    if (! docker_running()) {
+        writeln('  docker is not running; run `composer deps install` before `composer test`.');
 
-    writeln($status === 0
-        ? '  Formatted with php-cs-fixer.'
-        : '  Formatting reported problems; run `composer format`.');
+        return;
+    }
+
+    if (run($root, 'composer deps install') !== 0) {
+        // Two causes, in order of likelihood. A transient download failure --
+        // composer cannot roll back cleanly here, because /app/vendor is the
+        // mount point itself, so it aborts with "Could not delete /app/vendor"
+        // and a rerun fixes it. Or a composer.lock resolved on a newer PHP than
+        // the oldest version the package supports, which no rerun will fix.
+        writeln('  The container install failed. Rerun `composer deps install`;');
+        writeln('  if it fails the same way, re-resolve the lock: `composer deps update`.');
+    }
 }
 
 /**
- * Generate data models from the OpenAPI document in sdk.json.
+ * Generate src/Models and src/ApiRoute.php from the OpenAPI document.
+ *
+ * --force because the rewrite above left uncommitted edits under src/, and the
+ * generator refuses to overwrite uncommitted work without it.
  */
 function generate_sdk(string $root): void
 {
-    $script = $root.'/scripts/generate-sdk';
-
-    if (!is_file($script) || !is_executable($script)) {
-        writeln('  Skipped SDK generation: scripts/generate-sdk not found or not executable.');
+    if (! is_file($root.'/vendor/autoload.php')) {
+        writeln('  Skipped generation: no vendor/. Run `composer install && composer generate-sdk -- --force`.');
 
         return;
     }
 
+    if (run($root, 'scripts/generate-sdk --force') !== 0) {
+        writeln('  Generation failed. Check `openapi.source` in sdk.json, then run `composer generate-sdk -- --force`.');
+    }
+}
+
+/**
+ * Format, regenerate the derived annotations and docs, analyse, and test.
+ */
+function verify(string $root): void
+{
+    if (! docker_running()) {
+        writeln('  docker is not running; run `composer fix` when it is.');
+
+        return;
+    }
+
+    // Every step of `composer fix` runs a binary out of the mounted container
+    // vendor tree, so without one it fails on the first line with exit 127.
+    if (glob($root.'/.vendor/php*/autoload.php') === []) {
+        writeln('  Skipped `composer fix`: no container vendor tree yet.');
+        writeln('  Run `composer deps install` (or `composer deps update`), then `composer fix`.');
+
+        return;
+    }
+
+    if (run($root, 'composer fix') !== 0) {
+        writeln('  `composer fix` reported problems; fix them, then run `composer check`.');
+    }
+}
+
+function run(string $root, string $command): int
+{
     writeln('');
-    exec(
-        sprintf('cd %s && %s 2>&1', escapeshellarg($root), escapeshellarg($script)),
-        $output,
-        $status
-    );
+    writeln('  $ '.$command);
+    writeln('');
 
-    if ($status === 0) {
-        writeln('  Generated data models from OpenAPI document.');
-    } else {
-        writeln('  SDK generation failed; run `composer generate-sdk` to retry.');
-    }
+    passthru(sprintf('cd %s && %s', escapeshellarg($root), $command), $status);
 
-    foreach ($output as $line) {
-        if (trim($line) !== '') {
-            writeln('    '.$line);
-        }
-    }
+    return $status;
 }
 
-/**
- * @param  list<string>  $argv
- * @return array<string, string>
- */
-function options(array $argv): array
+function available(string $command): bool
 {
-    $options = [];
-
-    foreach (array_slice($argv, 1) as $argument) {
-        if (! str_starts_with($argument, '-')) {
-            continue;
-        }
-
-        $argument = ltrim($argument, '-');
-        $position = strpos($argument, '=');
-
-        if ($position === false) {
-            $options[$argument] = '';
-
-            continue;
-        }
-
-        $options[substr($argument, 0, $position)] = substr($argument, $position + 1);
-    }
-
-    return $options;
+    return trim((string) shell_exec('command -v '.escapeshellarg($command).' 2>/dev/null')) !== '';
 }
 
-/**
- * Answers supplied by file take the place of prompting. Unknown keys are
- * ignored and missing keys fall through to the computed default, so a file
- * may override as little as one value.
- *
- * @return array<string, string>
- */
-function read_answers(string $path): array
+function docker_running(): bool
 {
-    if (! is_file($path)) {
-        fwrite(STDERR, sprintf("init: answers file not found: %s\n", $path));
+    exec('docker info > /dev/null 2>&1', $output, $status);
 
-        exit(1);
-    }
-
-    $decoded = json_decode((string) file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
-
-    if (! is_array($decoded)) {
-        fwrite(STDERR, "init: answers file must contain a JSON object.\n");
-
-        exit(1);
-    }
-
-    $answers = [];
-
-    foreach (ANSWER_KEYS as $key) {
-        if (! array_key_exists($key, $decoded)) {
-            continue;
-        }
-
-        $value = $decoded[$key];
-
-        if ($value === null) {
-            $answers[$key] = '';
-
-            continue;
-        }
-
-        if (! is_scalar($value)) {
-            fwrite(STDERR, sprintf("init: answer '%s' must be a string.\n", $key));
-
-            exit(1);
-        }
-
-        $answers[$key] = (string) $value;
-    }
-
-    return $answers;
+    return $status === 0;
 }
+
+/*
+|------------------------------------------------------------------------------
+| Input
+|------------------------------------------------------------------------------
+*/
 
 /**
  * @param  array<string, string>  $previous
@@ -454,7 +291,9 @@ function ask_all(string $root, array $previous = []): array
         'config_class' => $config_class,
         'base_url' => ask('Base URL', $was('base_url', 'https://api.'.$slug.'.com')),
         'docs_url' => ask('Docs URL', $was('docs_url', TEMPLATE['docs_url'])),
-        'openapi_source' => ask('OpenAPI source (path or URL, may be empty)', $was('openapi_source', '')),
+        // Required: the package is not finished until its models exist, and
+        // they come from this document.
+        'openapi_source' => ask_source($root, $was('openapi_source', '')),
         'author' => ask('Author name', $was('author', git('config user.name'))),
         'author_email' => ask('Author email', $was('author_email', git('config user.email'))),
     ];
@@ -658,7 +497,7 @@ function rewrite_sdk_json(string $root, array $answers): void
     $json['docs_url'] = $answers['docs_url'];
 
     $openapi = isset($json['openapi']) && is_array($json['openapi']) ? $json['openapi'] : [];
-    $openapi['source'] = $answers['openapi_source'] !== '' ? $answers['openapi_source'] : null;
+    $openapi['source'] = $answers['openapi_source'];
     $json['openapi'] = $openapi;
 
     write_json($path, order_keys($json, [
@@ -866,36 +705,18 @@ function next_steps(array $answers): void
     $repository = repository($answers) !== '' ? repository($answers) : 'https://github.com/<org>/'.$answers['slug'];
 
     writeln('');
-    writeln('  Next:');
+    writeln('  Done. `composer test` runs the suite.');
     writeln('');
-    writeln('    composer setup');
+    writeln('  To publish the package:');
+    writeln('');
     writeln('    git remote rename origin template');
     writeln('    gh repo create '.trim(str_replace('https://github.com/', '', $repository)).' --source=. --remote=origin');
     writeln('    git config merge.keepours.driver true');
     writeln('    git add -A && git commit -m "Initialise '.composer_name($answers).' from template"');
     writeln('');
-    // The generator refuses to overwrite uncommitted work under src/Models and
-    // src/ApiRoute.php, and the rename above touched both, so the commit has to
-    // land first.
-    writeln('    composer generate-sdk path/to/openapi.json');
-    writeln('    composer check');
-    writeln('');
     writeln('    # README.md still describes the template.');
     writeln('');
     writeln('  docs/template.md has the runbook.');
-    writeln('');
-}
-
-function usage(): void
-{
-    writeln('');
-    writeln('  Usage: php init [options]');
-    writeln('');
-    writeln('    -n, --defaults        accept every computed default without prompting');
-    writeln('    --answers=<path>      read answers from a JSON object, no prompting');
-    writeln('    -h, --help            show this message');
-    writeln('');
-    writeln('  Answer keys: '.implode(', ', ANSWER_KEYS));
     writeln('');
 }
 
@@ -910,40 +731,61 @@ function writeln(string $line): void
 |------------------------------------------------------------------------------
 */
 
-/** Non-interactive mode: every prompt takes its default and every confirm says yes. */
-function auto(?bool $enable = null): bool
-{
-    static $auto = false;
-
-    if ($enable !== null) {
-        $auto = $enable;
-    }
-
-    return $auto;
-}
-
 function ask(string $question, string $default): string
 {
-    if (auto()) {
-        return $default;
-    }
-
     echo sprintf('  %s [%s]: ', $question, $default !== '' ? $default : '-');
-    $answer = trim((string) fgets(STDIN));
+
+    $answer = trim(read());
 
     return $answer === '' ? $default : $answer;
 }
 
+/**
+ * Prompt until the answer names a document the generator can read. An empty
+ * answer would leave the package with the template's Widget models, which is
+ * the one outcome nobody running this script wants.
+ */
+function ask_source(string $root, string $default): string
+{
+    while (true) {
+        $source = ask('OpenAPI source (path or URL)', $default);
+
+        if (str_starts_with($source, 'http://') || str_starts_with($source, 'https://')) {
+            return $source;
+        }
+
+        if ($source !== '' && (is_file($source) || is_file($root.'/'.$source))) {
+            return $source;
+        }
+
+        writeln('    Not a readable path or a URL. An OpenAPI document is required.');
+    }
+}
+
 function confirm(string $question, bool $default = false): bool
 {
-    if (auto()) {
-        return $default;
-    }
-
     echo sprintf('  %s? [%s] ', $question, $default ? 'Y/n' : 'y/N');
-    $answer = strtolower(trim((string) fgets(STDIN)));
+
+    $answer = strtolower(trim(read()));
 
     return $answer === '' ? $default : in_array($answer, ['y', 'yes'], true);
+}
+
+/**
+ * A closed stdin means no answer is ever coming, and every prompt here either
+ * loops until it is answered or has a default that would be written silently.
+ */
+function read(): string
+{
+    $line = fgets(STDIN);
+
+    if ($line === false) {
+        fwrite(STDERR, "\ninit: stdin closed before every question was answered.\n");
+
+        exit(1);
+    }
+
+    return $line;
 }
 
 function git(string $arguments): string

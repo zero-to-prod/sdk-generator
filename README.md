@@ -671,12 +671,13 @@ git remote rename origin template
 gh repo create <org>/github-api --source=. --remote=origin
 git config merge.keepours.driver true
 php init
-composer setup && composer check
 ```
 
-`php init` prompts for the package identity: slug, vendor, namespace, class names, base URL, docs URL, OpenAPI source. It shows every value before it writes anything.
+`php init` prompts for the package identity: slug, vendor, namespace, class names, base URL, docs URL, OpenAPI source. It shows every value before it writes anything. The OpenAPI source is the one answer it will not accept empty — a package with no models is not finished.
 
-Then it rewrites tokens across all files, renames the files carrying the old identity (`src/SdkApi.php`, `bin/sdk`), updates `composer.json` and `sdk.json`, deletes the template-only tests, and deletes itself. It prints what it removed and says the README needs rewriting.
+Then it rewrites tokens across all files, renames the files carrying the old identity (`src/SdkApi.php`, `bin/sdk`), updates `composer.json` and `sdk.json`, deletes the template-only tests, and deletes itself.
+
+From there it builds the package: `.env`, `composer install` on the host and in the docker services, `composer generate-sdk` against your document, then `composer fix`. When it finishes, `composer test` runs the suite. Steps it cannot run — no composer on PATH, docker not started — are reported with the command to run yourself.
 
 `composer new-package -- <slug> --org=<org>` prints that whole sequence with your slug filled in. Copy-paste it.
 
