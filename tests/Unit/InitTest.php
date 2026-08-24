@@ -400,6 +400,30 @@ class InitTest extends TestCase
     }
 
     #[Test]
+    public function the_api_class_defaults_to_the_namespace_segment(): void
+    {
+        $sandbox = $this->sandbox();
+
+        // No `Api` is appended: the class is named after the package, so a slug
+        // that does not read as an API keeps its own name.
+        $answers = array_fill(0, count(self::ANSWERS), '');
+        $answers[0] = 'datadog-sdk';
+        $answers[9] = self::OPENAPI;
+
+        [$status, $output] = $this->execute($sandbox, $answers);
+
+        self::assertSame(0, $status, implode("\n", $output));
+
+        $sdk = $this->json($sandbox . '/sdk.json');
+
+        self::assertSame('DatadogSdk', $sdk['api_class']);
+        self::assertSame('DatadogSdkConfig', $sdk['config_class']);
+        self::assertFileExists($sandbox . '/src/DatadogSdk.php');
+        self::assertFileExists($sandbox . '/src/DatadogSdkConfig.php');
+        self::assertFileExists($sandbox . '/factories/DatadogSdkConfigFactory.php');
+    }
+
+    #[Test]
     public function asks_again_until_the_openapi_source_is_readable(): void
     {
         $sandbox = $this->sandbox();

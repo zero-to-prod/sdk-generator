@@ -278,7 +278,7 @@ function ask_all(string $root, array $previous = []): array
     $namespace = trim(ask('PHP namespace', $was('namespace', namespace_for($vendor, $slug))), '\\') ?: TEMPLATE['namespace'];
     $title = ask('Title', $was('title', titleise($slug)));
     $description = ask('Description', $was('description', TEMPLATE['description']));
-    $api_class = ask('API class name', $was('api_class', api_class_for($slug))) ?: TEMPLATE['api_class'];
+    $api_class = ask('API class name', $was('api_class', api_class_for($namespace, $slug))) ?: TEMPLATE['api_class'];
     $config_class = ask('Config class name', $was('config_class', config_class_for($api_class))) ?: TEMPLATE['config_class'];
 
     return [
@@ -826,16 +826,17 @@ function namespace_for(string $vendor, string $slug): string
     return $root === '' ? $package : $root.'\\'.$package;
 }
 
-/** Exactly one trailing `Api`: `github-api` -> `GithubApi`, `stripe` -> `StripeApi`. */
-function api_class_for(string $slug): string
+/**
+ * The package segment of the namespace, verbatim: `Zerotoprod\DatadogSdk` ->
+ * `DatadogSdk`. No `Api` is appended -- the class is the package, and a slug
+ * that already reads as one (`github-api` -> `GithubApi`) needs no help.
+ */
+function api_class_for(string $namespace, string $slug): string
 {
-    $studly = studly($slug);
+    $segments = explode('\\', $namespace);
+    $class = (string) end($segments);
 
-    if ($studly === '') {
-        return TEMPLATE['api_class'];
-    }
-
-    return str_ends_with($studly, 'Api') ? $studly : $studly.'Api';
+    return $class !== '' ? $class : (studly($slug) ?: TEMPLATE['api_class']);
 }
 
 function config_class_for(string $api_class): string
