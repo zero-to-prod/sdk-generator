@@ -731,12 +731,15 @@ That is what keeps a derived package from editing a shared file, and from carryi
 ```bash
 composer generate-sdk                          # uses openapi.source from sdk.json
 composer generate-sdk path/to/openapi.json     # or an explicit path or URL
+composer generate-sdk path/to/openapi.yaml     # JSON or YAML — see below
 composer generate-sdk -- --dry-run             # print the plan, write nothing
 composer generate-sdk -- --models-only
 composer generate-sdk -- --routes-only
 composer generate-sdk -- --webhooks            # include x-webhooks operations
 composer generate-sdk -- --all-schemas         # emit every schema, not only the reachable ones
 ```
+
+The document may be JSON or YAML; the format is read from the body, not the extension. YAML needs a parser the package does not depend on — install `symfony/yaml` (`composer require --dev symfony/yaml`) or enable `ext-yaml`. Without one, a YAML document fails with a message saying so rather than a partial parse.
 
 Composer keeps flags for itself unless `--` separates them. `composer generate-sdk --verbose` runs composer verbosely; `composer generate-sdk -- --verbose` reaches the generator. A path argument needs no separator.
 

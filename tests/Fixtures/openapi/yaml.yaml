@@ -1,0 +1,39 @@
+# Exercises the YAML the wild actually ships: comments, unquoted scalars,
+# block scalars, anchors and merge keys, and a flow mapping.
+openapi: 3.0.3
+info:
+  title: Yaml
+  version: '1.0.0'
+  description: |
+    A document written in YAML rather than JSON,
+    with a description spanning two lines.
+paths:
+  /v1/things:
+    get:
+      operationId: things/list
+      summary: >-
+        List every thing.
+      parameters:
+        - {name: page, in: query, schema: {type: integer}}
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  things:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/thing'
+components:
+  schemas:
+    named: &named
+      type: object
+      properties:
+        name:
+          type: string
+    thing:
+      <<: *named
+      description: A thing.

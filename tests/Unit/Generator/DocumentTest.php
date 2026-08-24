@@ -64,15 +64,31 @@ class DocumentTest extends GeneratorCase
     }
 
     #[Test]
-    public function yaml_is_refused_with_a_conversion_hint(): void
+    public function it_loads_a_yaml_file_from_disk(): void
     {
-        try {
-            Document::load(self::fixture('not-json.yaml'));
-            self::fail('expected YAML to be refused');
-        } catch (GeneratorException $exception) {
-            self::assertStringContainsString('looks like YAML', $exception->getMessage());
-            self::assertStringContainsString('js-yaml', $exception->getMessage());
-        }
+        $document = Document::load(self::fixture('yaml.yaml'));
+
+        self::assertSame('3.0.3', $document->version());
+        self::assertArrayHasKey('thing', $document->schemas());
+        self::assertArrayHasKey('/v1/things', $document->paths());
+    }
+
+    #[Test]
+    public function yaml_anchors_and_merge_keys_are_resolved_by_the_parser(): void
+    {
+        $thing = Document::load(self::fixture('yaml.yaml'))->schemas()['thing'];
+
+        self::assertSame('object', $thing['type']);
+        self::assertArrayHasKey('name', $thing['properties']);
+    }
+
+    #[Test]
+    public function malformed_yaml_reports_the_decode_error(): void
+    {
+        $this->expectException(GeneratorException::class);
+        $this->expectExceptionMessage('Malformed YAML in inline');
+
+        Document::parse("openapi: 3.0.3\ninfo:\n  title: a\n bad: indent\n", 'inline');
     }
 
     #[Test]
@@ -85,10 +101,10 @@ class DocumentTest extends GeneratorCase
     }
 
     #[Test]
-    public function a_json_scalar_body_is_not_a_document(): void
+    public function a_scalar_body_is_not_a_document(): void
     {
         $this->expectException(GeneratorException::class);
-        $this->expectExceptionMessage('is not a JSON OpenAPI document');
+        $this->expectExceptionMessage('OpenAPI document is not an object: inline');
 
         Document::parse('"just a string"', 'inline');
     }

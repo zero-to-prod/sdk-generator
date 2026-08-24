@@ -32,10 +32,12 @@
         "phpstan/phpstan": "^2.1",
         "friendsofphp/php-cs-fixer": "^3.75",
         "rector/rector": "^2.4",
+        "symfony/yaml": "^6.4|^7.0",
         "zero-to-prod/data-model-generator": "*"
     },
     "suggest": {
         "illuminate/http": "Required when using the Laravel Http transport",
+        "symfony/yaml": "Required to generate from a YAML OpenAPI document (ext-yaml also works)",
         "zero-to-prod/data-model-generator": "Required to regenerate models from an OpenAPI document"
     },
     "bin": [

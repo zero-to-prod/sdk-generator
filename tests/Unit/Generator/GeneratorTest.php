@@ -4,6 +4,7 @@ namespace Unit\Generator;
 
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionEnum;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Unit\Generator\GeneratorCase;
 use Zerotoprod\Sdk\Generator\Generator;
 use Zerotoprod\Sdk\Generator\GeneratorConfig;
@@ -60,6 +61,30 @@ class GeneratorTest extends GeneratorCase
 
         self::assertSame($first->files, $second->files);
         self::assertSame($before, $after);
+    }
+
+    #[Test]
+    public function a_yaml_document_generates_byte_identical_output_to_its_json_twin(): void
+    {
+        // The YAML twin is dumped from the JSON fixture rather than committed
+        // alongside it: one fixture stays the single source of truth, and the
+        // test still proves the format never reaches past Document::parse().
+        $json = $this->generate('widgets');
+        $before = array_map(static fn(string $f): string => (string) file_get_contents($f), $json->files);
+
+        $yaml = $this->temp() . '/widgets.yaml';
+        file_put_contents($yaml, Yaml::dump(
+            json_decode((string) file_get_contents(self::fixture('widgets.json')), true),
+            32,
+        ));
+
+        $result = Generator::run(new GeneratorConfig(source: $yaml, root: $this->temp()));
+
+        self::assertSame($json->files, $result->files);
+        self::assertSame(
+            $before,
+            array_map(static fn(string $f): string => (string) file_get_contents($f), $result->files),
+        );
     }
 
     #[Test]

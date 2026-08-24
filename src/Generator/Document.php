@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Zerotoprod\Sdk\Generator;
 
+use Symfony\Component\Yaml\Exception\ParseException;
+use Symfony\Component\Yaml\Yaml;
+
 /**
  * An OpenAPI 3.0/3.1 document held in memory, plus local `$ref` resolution.
  *
- * JSON only. YAML is rejected with an actionable message rather than parsed
- * half-heartedly — see {@see self::parse()}.
+ * JSON is decoded natively; YAML needs a parser — `symfony/yaml` or `ext-yaml`,
+ * whichever is present. Neither is a hard requirement of the package, so a YAML
+ * document with no parser installed fails with an actionable message rather
+ * than a half-hearted parse — see {@see self::parse()}.
  *
  * Only same-document pointers (`#/...`) resolve; an external or remote `$ref`
  * is an error rather than a silent `mixed`, because dropping one would change
@@ -56,7 +61,12 @@ final class Document
     }
 
     /**
-     * Decode a document body. `$label` names the source in error messages.
+     * Decode a document body, JSON or YAML. `$label` names the source in error
+     * messages.
+     *
+     * The format is taken from the body, not the file extension: a leading `{`
+     * means JSON, anything else is handed to a YAML parser. JSON is a subset of
+     * YAML, so a `.yaml` file holding a flow mapping still decodes correctly.
      */
     public static function parse(string $raw, string $label): self
     {
@@ -66,22 +76,60 @@ final class Document
             throw new GeneratorException("OpenAPI document is empty: $label");
         }
 
-        if ($head[0] !== '{') {
-            throw new GeneratorException(
-                "$label is not a JSON OpenAPI document (it looks like YAML)."
-                . ' The generator reads JSON only — convert it first, e.g.'
-                . ' `npx -y js-yaml spec.yaml > spec.json`.',
-            );
-        }
-
-        $data = json_decode($raw, true);
+        $data = $head[0] === '{' ? self::decodeJson($raw, $label) : self::decodeYaml($raw, $label);
 
         if (!is_array($data)) {
-            throw new GeneratorException("Malformed JSON in $label: " . json_last_error_msg());
+            throw new GeneratorException("OpenAPI document is not an object: $label");
         }
 
         /** @var array<string, mixed> $data */
         return new self($data);
+    }
+
+    private static function decodeJson(string $raw, string $label): mixed
+    {
+        $data = json_decode($raw, true);
+
+        if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+            throw new GeneratorException("Malformed JSON in $label: " . json_last_error_msg());
+        }
+
+        return $data;
+    }
+
+    /**
+     * YAML needs a parser the package does not depend on: `symfony/yaml` first
+     * (YAML 1.2-ish, leaves dates as strings), then `ext-yaml`.
+     */
+    private static function decodeYaml(string $raw, string $label): mixed
+    {
+        if (class_exists(Yaml::class)) {
+            try {
+                return Yaml::parse($raw);
+            } catch (ParseException $exception) {
+                throw new GeneratorException(
+                    "Malformed YAML in $label: " . $exception->getMessage(),
+                    0,
+                    $exception,
+                );
+            }
+        }
+
+        if (function_exists('yaml_parse')) {
+            $data = @yaml_parse($raw);
+
+            if ($data === false) {
+                throw new GeneratorException("Malformed YAML in $label");
+            }
+
+            return $data;
+        }
+
+        throw new GeneratorException(
+            "$label looks like a YAML OpenAPI document, but no YAML parser is installed."
+            . ' Install one with `composer require --dev symfony/yaml`, enable `ext-yaml`,'
+            . ' or convert the document first, e.g. `npx -y js-yaml spec.yaml > spec.json`.',
+        );
     }
 
     /** The `openapi` version string, or `0.0.0` when absent. */
