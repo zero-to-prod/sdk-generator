@@ -112,6 +112,25 @@ final class Naming
         return $this->classes[$raw] = $this->claim($base, $this->classesTaken);
     }
 
+    /**
+     * Reserve class names the document is not allowed to claim.
+     *
+     * The hand-written models in `retain_models` are the package's own, not the
+     * document's: `Errors` and `Query` are resolved by the shared client code
+     * in `src/`. The sweep already refuses to delete them, but a document
+     * schema landing on one of their names would overwrite the file and break
+     * `src/` rather than merely shadowing an example. Reserving the names up
+     * front sends the document's schema to `Errors2`/`Query2` instead.
+     *
+     * @param list<string> $classes
+     */
+    public function reserveClasses(array $classes): void
+    {
+        foreach ($classes as $class) {
+            $this->classesTaken[$class] = true;
+        }
+    }
+
     /** Whether a class name has already been handed out. */
     public function classTaken(string $class): bool
     {

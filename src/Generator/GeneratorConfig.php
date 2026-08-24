@@ -29,8 +29,10 @@ final class GeneratorConfig
      * @param bool         $dryRun    Plan only; write nothing.
      * @param Closure|null $reader    `fn(string $source): string|false`
      * @param Closure|null $formatter `fn(list<string> $files): void`
-     * @param list<string> $retainModels Hand-written model classes the sweep must never delete,
-     *                                   by short class name; comes from `retain_models` in sdk.json.
+     * @param list<string> $retainModels Hand-written model classes the package owns, by short
+     *                                   class name; comes from `retain_models` in sdk.json. The
+     *                                   sweep never deletes them, the document may not claim
+     *                                   their names, and a run refuses to start with one missing.
      */
     public function __construct(
         public readonly string $source,

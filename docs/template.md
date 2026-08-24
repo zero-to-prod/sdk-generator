@@ -193,7 +193,12 @@ For this template that list is the expected surface:
   the file, is the shared thing. Note that generation *deletes* here as well as
   writes: every `src/Models/*.php` outside `retain_models` goes, along with the
   matching `factories/<Model>Factory.php`. Anything hand-written you want to keep
-  under `src/Models/` belongs in `retain_models`.
+  under `src/Models/` belongs in `retain_models`. A name in that list is reserved,
+  not merely spared: a document schema that collides with it takes a discriminator
+  instead of overwriting the file, and a run refuses to start while one of those
+  files is missing — nothing in the document can recreate a hand-written class, so
+  the alternative is a package whose own `src/` references classes it does not
+  have. Removing one for good means removing it from `retain_models` too.
 - **`.env`** — local, per-checkout configuration.
 
 Everything else — the transports, hooks, `Internal/`, `scripts/`, `docker/`,

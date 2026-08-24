@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Run PHPStan static analysis at level 9
+
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
 
 version="${PHP_VERSION}"
 
-docker compose run --rm "php${version}" vendor/bin/phpstan analyse --memory-limit=512M "$@"
+docker compose run --rm "php${version}" vendor/bin/phpstan analyse --memory-limit=1G "$@"

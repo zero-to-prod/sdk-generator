@@ -3,11 +3,11 @@
 namespace Unit\Generator;
 
 use PHPUnit\Framework\Attributes\Test;
-use Tests\TestCase;
+use Tests\Unit\Generator\GeneratorCase;
 use Zerotoprod\Sdk\Generator\GeneratorException;
 use Zerotoprod\Sdk\Generator\Guard;
 
-class GuardTest extends TestCase
+class GuardTest extends GeneratorCase
 {
     #[Test]
     public function no_paths_means_nothing_to_check(): void
@@ -92,5 +92,50 @@ class GuardTest extends TestCase
         Guard::assertClean('/repo', ['src/Models'], $runner, true);
 
         self::assertFalse($called);
+    }
+
+    #[Test]
+    public function a_retained_model_that_exists_is_not_reported(): void
+    {
+        $root = $this->temp();
+        mkdir("$root/src/Models", 0o775, true);
+        file_put_contents("$root/src/Models/Errors.php", '<?php');
+
+        self::assertSame([], Guard::absent($root, ['Errors']));
+
+        Guard::assertRetained($root, ['Errors']);
+    }
+
+    #[Test]
+    public function a_missing_retained_model_is_reported_by_path(): void
+    {
+        $root = $this->temp();
+        mkdir("$root/src/Models", 0o775, true);
+        file_put_contents("$root/src/Models/Pagination.php", '<?php');
+
+        self::assertSame(
+            ['src/Models/Errors.php', 'src/Models/Query.php'],
+            Guard::absent($root, ['Errors', 'Pagination', 'Query']),
+        );
+    }
+
+    #[Test]
+    public function nothing_retained_means_nothing_to_check(): void
+    {
+        self::assertSame([], Guard::absent('/nowhere', []));
+    }
+
+    #[Test]
+    public function a_missing_retained_model_stops_the_run_and_says_how_to_restore_it(): void
+    {
+        try {
+            Guard::assertRetained($this->temp(), ['Errors', 'Query']);
+            self::fail('expected a refusal');
+        } catch (GeneratorException $exception) {
+            self::assertStringContainsString('src/Models/Errors.php', $exception->getMessage());
+            self::assertStringContainsString('src/Models/Query.php', $exception->getMessage());
+            self::assertStringContainsString('git restore', $exception->getMessage());
+            self::assertStringContainsString('retain_models', $exception->getMessage());
+        }
     }
 }

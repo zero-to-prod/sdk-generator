@@ -20,6 +20,11 @@ final class Generator
     {
         $document = Document::load($config->source, $config->reader);
         $naming = new Naming();
+
+        // Before anything is named: the hand-written models the sweep keeps own
+        // their class names, so a document schema cannot overwrite one of them.
+        $naming->reserveClasses($config->retainModels);
+
         $schemas = new SchemaMapper($document, $naming, $config->docsUrl);
 
         // Named schemas first: they claim their canonical class names, and

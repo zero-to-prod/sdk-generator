@@ -49,6 +49,14 @@ try {
         retainModels: manifestList('retain_models', ['Errors', 'Pagination', 'Query']),
     );
 
+    // Nothing the document can fix: the hand-written models named in
+    // `retain_models` are what the shared client code in src/ resolves, so a run
+    // that leaves one absent produces a package static analysis reads as broken.
+    // Checked on a dry run too -- that is the run you make to find out.
+    if ($out === $root) {
+        Guard::assertRetained($root, $config->retainModels);
+    }
+
     // Never clobber a hand edit that is not committed anywhere.
     if (!$options->dryRun && $out === $root) {
         Guard::assertClean(

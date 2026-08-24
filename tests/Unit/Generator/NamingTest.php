@@ -464,4 +464,19 @@ class NamingTest extends TestCase
         self::assertFalse(Naming::endsWithParameter('/v1/widgets'));
         self::assertFalse(Naming::endsWithParameter('/v1/widgets/{id}/tags'));
     }
+
+    #[Test]
+    public function a_reserved_class_name_is_not_handed_to_a_document_schema(): void
+    {
+        $naming = new Naming();
+        $naming->reserveClasses(['Errors', 'Pagination', 'Query']);
+
+        self::assertTrue($naming->classTaken('Errors'));
+        self::assertSame('Query2', $naming->className('query'));
+        self::assertSame('Errors2', $naming->className('errors'));
+        // Asking twice still answers the same thing.
+        self::assertSame('Query2', $naming->className('query'));
+        // A name nobody reserved is untouched.
+        self::assertSame('Widget', $naming->className('widget'));
+    }
 }

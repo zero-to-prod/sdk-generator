@@ -725,7 +725,7 @@ That is what keeps a derived package from editing a shared file, and from carryi
 }
 ```
 
-`retain_models` is the one list generation reads back rather than writes. Every other `.php` file under `src/Models/` is deleted before a run writes its output.
+`retain_models` is the one list generation reads back rather than writes. It names the models the package owns: they are never deleted, the document may not claim their class names, and a run refuses to start while one of them is missing from `src/Models/`. Every other `.php` file under `src/Models/` is deleted before a run writes its output.
 
 ### What gets generated
 
@@ -747,7 +747,7 @@ Composer keeps flags for itself unless `--` separates them. `composer generate-s
 | Path                                           | Owner                                                      |
 |------------------------------------------------|------------------------------------------------------------|
 | `src/Models/**`                                | generated — rewritten, swept of old models                 |
-| models named in `retain_models`                | hand-written, never swept                                  |
+| models named in `retain_models`                | hand-written — never swept, name never reused               |
 | `src/ApiRoute.php`                             | generated — replaced wholesale, do not hand-edit           |
 | `factories/<Model>Factory.php`                 | deleted with the model                                     |
 | `factories/ErrorsFactory`, `PaginationFactory` | hand-written, never swept                                  |
@@ -756,6 +756,8 @@ Composer keeps flags for itself unless `--` separates them. `composer generate-s
 | everything else                                | yours or the template's                                    |
 
 Generation owns `src/Models/`. Before writing, it deletes every `src/Models/*.php` whose class name is not in `retain_models`, plus the matching factories. That stops old models lingering as orphans no route references. `--dry-run` shows the deletions without doing them.
+
+The models in `retain_models` are hand-written, so no document can recreate one that has been deleted — and `Errors` and `Query` are resolved by the shared client code in `src/`. A run therefore stops before writing anything if one of them is absent, naming the files and how to restore them, rather than finishing successfully and leaving static analysis to report the missing classes. A document schema whose name collides with a retained model gets a discriminator (`Query` → `Query2`) instead of overwriting the file.
 
 What the document turns into:
 

@@ -11,10 +11,10 @@ use Zerotoprod\Sdk\Internal\DataModel;
  * Pagination metadata for {@see FixtureThingsResponse}.
  *
  * A mirror of the shipped `Zerotoprod\Sdk\Models\Pagination`, and deliberately
- * not that class: `retain_models` stops the generator *deleting* a retained
- * model, not overwriting one. A document that declares its own `Pagination`
- * schema replaces those properties, and the shared suite would fail in the
- * derived package on fields the template happened to ship.
+ * not that class. `Pagination` is example content: a derived package whose own
+ * document paginates differently drops it from `retain_models`, and the next run
+ * sweeps it. Naming it from the shared suite would fail there on fields the
+ * template happened to ship.
  */
 class FixturePagination
 {
