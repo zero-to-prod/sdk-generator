@@ -2,13 +2,43 @@
 
 Template for a framework-agnostic PHP SDK, generated from an OpenAPI document.
 
-Two things live here.
+## Install
 
-A package template. Client, transports, lifecycle hooks, route enum, models, factories, and the `composer` script tooling. `php init` renames it into a new package, and git keeps the shared ancestry, so template fixes merge forward forever.
+```shell
+git add .
+```
 
-A generator. `composer generate-sdk` reads an OpenAPI 3.0/3.1 document and writes `src/Models/` and `src/ApiRoute.php`. Models come from [`zero-to-prod/data-model-generator`](https://github.com/zero-to-prod/data-model-generator).
+```shell
+git commit -m "Let\'s change the world\!"
+```
 
-The `Widget` domain shown below is shipped example content. The first real generation replaces it.
+```shell
+git remote add template https://github.com/zero-to-prod/sdk-generator.git
+```
+
+```shell
+git fetch template
+```
+
+```shell
+git config merge.keepours.driver true
+```
+
+```shell
+git log --oneline template/main
+```
+
+```shell
+git merge -s ours --allow-unrelated-histories sha -m "Graft template history"
+```
+
+```shell
+git config pull.rebase false
+```
+
+```shell
+git pull template main
+```
 
 ## Table of Contents
 

@@ -705,18 +705,18 @@ function next_steps(array $answers): void
     $repository = repository($answers) !== '' ? repository($answers) : 'https://github.com/<org>/'.$answers['slug'];
 
     writeln('');
-    writeln('  Done. `composer test` runs the suite.');
+    writeln('Done. `composer test` runs the suite.');
     writeln('');
-    writeln('  To publish the package:');
-    writeln('');
-    writeln('    git remote rename origin template');
-    writeln('    gh repo create '.trim(str_replace('https://github.com/', '', $repository)).' --source=. --remote=origin');
+    writeln('    git add .');
+    writeln('    git commit -m "Let\'s change the world\!"');
+    writeln('    git remote add template https://github.com/zero-to-prod/sdk-generator.git');
+    writeln('    git fetch template');
     writeln('    git config merge.keepours.driver true');
-    writeln('    git add -A && git commit -m "Initialise '.composer_name($answers).' from template"');
-    writeln('');
-    writeln('    # README.md still describes the template.');
-    writeln('');
-    writeln('  docs/template.md has the runbook.');
+    writeln('    git log --oneline template/main');
+    writeln('    git merge -s ours --allow-unrelated-histories sha -m "Graft template history"');
+    writeln('    git config pull.rebase false');
+    writeln('    git pull template main');
+    writeln('See docs/template.md for more detail.');
     writeln('');
 }
 
